@@ -149,8 +149,7 @@ public class TransactionControllerIntegrationTest {
         mockMvc.perform(post("/api/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isBadGateway()) // agora espera 502
-                .andExpect(content().string("Transaction not authorized by external gateway"));
+                .andExpect(status().isForbidden());
     }
 
 

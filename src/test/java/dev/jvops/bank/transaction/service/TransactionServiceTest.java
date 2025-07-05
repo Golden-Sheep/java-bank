@@ -5,6 +5,8 @@ import dev.jvops.bank.api.external.paymentgateway.PaymentGatewayClient;
 import dev.jvops.bank.transaction.dto.TransactionRequestDTO;
 import dev.jvops.bank.transaction.model.Transaction;
 import dev.jvops.bank.transaction.repository.TransactionRepository;
+import dev.jvops.bank.transaction.service.exception.InsufficientBalanceException;
+import dev.jvops.bank.transaction.service.exception.TransactionUnauthorizedException;
 import dev.jvops.bank.wallet.model.Wallet;
 import dev.jvops.bank.wallet.service.WalletService;
 import org.junit.jupiter.api.BeforeEach;
@@ -93,11 +95,11 @@ class TransactionServiceTest {
         when(walletService.getWalletById(2L)).thenReturn(targetWallet);
 
         // Act + Assert
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+        InsufficientBalanceException exception = assertThrows(InsufficientBalanceException.class, () -> {
             transactionService.transfer(dto);
         });
 
-        assertEquals("Insufficient balance", exception.getMessage());
+        assertEquals(InsufficientBalanceException.DEFAULT_MESSAGE, exception.getMessage());
         verify(transactionRepository, never()).save(any());
     }
 
@@ -120,11 +122,11 @@ class TransactionServiceTest {
         when(walletService.getWalletById(2L)).thenReturn(targetWallet);
         when(paymentGatewayClient.authorizeTransaction()).thenReturn(false); // simula rejeição
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+        TransactionUnauthorizedException exception = assertThrows(TransactionUnauthorizedException.class, () -> {
             transactionService.transfer(dto);
         });
 
-        assertEquals("Transaction not authorized by external gateway", exception.getMessage());
+        assertEquals(TransactionUnauthorizedException.DEFAULT_MESSAGE, exception.getMessage());
         verify(transactionRepository, never()).save(any());
     }
 

@@ -6,6 +6,8 @@ import dev.jvops.bank.common.AppLogger;
 import dev.jvops.bank.transaction.dto.TransactionRequestDTO;
 import dev.jvops.bank.transaction.model.Transaction;
 import dev.jvops.bank.transaction.repository.TransactionRepository;
+import dev.jvops.bank.transaction.service.exception.InsufficientBalanceException;
+import dev.jvops.bank.transaction.service.exception.TransactionUnauthorizedException;
 import dev.jvops.bank.wallet.model.Wallet;
 import dev.jvops.bank.wallet.service.WalletService;
 import jakarta.transaction.Transactional;
@@ -31,7 +33,7 @@ public class TransactionService {
         BigDecimal amount = dto.getAmount();
 
         if (fromWallet.getAmount().compareTo(amount) < 0) {
-            throw new IllegalArgumentException("Insufficient balance");
+            throw new InsufficientBalanceException();
         }
 
         fromWallet.setAmount(fromWallet.getAmount().subtract(amount));
@@ -46,7 +48,7 @@ public class TransactionService {
         // Verifica autorização externa
         boolean authorized = paymentGatewayClient.authorizeTransaction();
         if (!authorized) {
-            throw new IllegalStateException("Transaction not authorized by external gateway");
+            throw new TransactionUnauthorizedException();
         }
 
         boolean notify = notificationGatewayClient.NotifyTransaction();
