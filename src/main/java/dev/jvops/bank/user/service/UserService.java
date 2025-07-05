@@ -1,10 +1,11 @@
 package dev.jvops.bank.user.service;
 
-import dev.jvops.bank.dto.UserStoreDTO;
+import dev.jvops.bank.user.dto.UserStoreDTO;
 import dev.jvops.bank.user.model.User;
 import dev.jvops.bank.user.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +30,7 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    @Cacheable(value = "users", key = "#id")
     public User getUserById(Long id) {
         return userRepository.findById(id)
                 .filter(user -> user.getDeletedAt() == null)

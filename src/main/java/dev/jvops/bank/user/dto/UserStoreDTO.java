@@ -1,4 +1,4 @@
-package dev.jvops.bank.dto;
+package dev.jvops.bank.user.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;

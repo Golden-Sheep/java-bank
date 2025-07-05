@@ -1,6 +1,6 @@
 package dev.jvops.bank.user.service;
 
-import dev.jvops.bank.dto.UserStoreDTO;
+import dev.jvops.bank.user.dto.UserStoreDTO;
 import dev.jvops.bank.user.model.User;
 import dev.jvops.bank.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
