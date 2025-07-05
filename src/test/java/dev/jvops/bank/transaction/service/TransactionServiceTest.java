@@ -100,4 +100,32 @@ class TransactionServiceTest {
         assertEquals("Insufficient balance", exception.getMessage());
         verify(transactionRepository, never()).save(any());
     }
+
+    @Test
+    void testTransfer_FailsWhenNotAuthorized() {
+        Wallet originWallet = new Wallet();
+        originWallet.setId(1L);
+        originWallet.setAmount(new BigDecimal("100.00"));
+
+        Wallet targetWallet = new Wallet();
+        targetWallet.setId(2L);
+        targetWallet.setAmount(new BigDecimal("0.00"));
+
+        TransactionRequestDTO dto = new TransactionRequestDTO();
+        dto.setOriginWalletId(1L);
+        dto.setTargetWalletId(2L);
+        dto.setAmount(new BigDecimal("50.00"));
+
+        when(walletService.getWalletById(1L)).thenReturn(originWallet);
+        when(walletService.getWalletById(2L)).thenReturn(targetWallet);
+        when(paymentGatewayClient.authorizeTransaction()).thenReturn(false); // simula rejeição
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+            transactionService.transfer(dto);
+        });
+
+        assertEquals("Transaction not authorized by external gateway", exception.getMessage());
+        verify(transactionRepository, never()).save(any());
+    }
+
 }

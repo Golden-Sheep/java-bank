@@ -5,6 +5,8 @@ import dev.jvops.bank.user.model.User;
 import dev.jvops.bank.wallet.model.Wallet;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -15,6 +17,8 @@ import java.time.LocalDateTime;
 @Table(name = "accounts")
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
+@Data
 public class Account {
 
     @Id
