@@ -5,6 +5,7 @@ import dev.jvops.bank.api.external.paymentgateway.PaymentGatewayClient;
 import dev.jvops.bank.common.AppLogger;
 import dev.jvops.bank.transaction.dto.TransactionRequestDTO;
 import dev.jvops.bank.transaction.model.Transaction;
+import dev.jvops.bank.transaction.model.enums.TransactionStatus;
 import dev.jvops.bank.transaction.repository.TransactionRepository;
 import dev.jvops.bank.transaction.service.exception.InsufficientBalanceException;
 import dev.jvops.bank.transaction.service.exception.TransactionUnauthorizedException;
@@ -25,12 +26,17 @@ public class TransactionService {
     private final NotificationGatewayClient notificationGatewayClient;
 
     @Transactional
-    public Transaction transfer(TransactionRequestDTO dto){
-
+    public Transaction transfer(TransactionRequestDTO dto) {
         Wallet fromWallet = walletService.getWalletById(dto.getOriginWalletId());
         Wallet toWallet = walletService.getWalletById(dto.getTargetWalletId());
-
         BigDecimal amount = dto.getAmount();
+
+        // Cria transação com status inicial
+        Transaction transaction = Transaction.builder()
+                .originWallet(fromWallet)
+                .targetWallet(toWallet)
+                .amount(amount)
+                .build();
 
         if (fromWallet.getAmount().compareTo(amount) < 0) {
             throw new InsufficientBalanceException();
@@ -39,13 +45,6 @@ public class TransactionService {
         fromWallet.setAmount(fromWallet.getAmount().subtract(amount));
         toWallet.setAmount(toWallet.getAmount().add(amount));
 
-        Transaction transaction = Transaction.builder()
-                .originWallet(fromWallet)
-                .targetWallet(toWallet)
-                .amount(amount)
-                .build();
-
-        // Verifica autorização externa
         boolean authorized = paymentGatewayClient.authorizeTransaction();
         if (!authorized) {
             throw new TransactionUnauthorizedException();
@@ -56,7 +55,7 @@ public class TransactionService {
             AppLogger.warn(TransactionService.class, "Transaction completed but notification failed");
         }
 
+        transaction.setStatus(TransactionStatus.APPROVED);
         return transactionRepository.save(transaction);
-
     }
 }

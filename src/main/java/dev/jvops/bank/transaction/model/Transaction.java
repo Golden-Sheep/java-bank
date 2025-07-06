@@ -1,5 +1,6 @@
 package dev.jvops.bank.transaction.model;
 
+import dev.jvops.bank.transaction.model.enums.TransactionStatus;
 import dev.jvops.bank.wallet.model.Wallet;
 import jakarta.persistence.*;
 import lombok.*;
@@ -41,4 +42,14 @@ public class Transaction {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    @Enumerated(EnumType.STRING)
+    private TransactionStatus status;
+
+    @PrePersist
+    public void prePersist() {
+        if (status == null) {
+            status = TransactionStatus.CREATED;
+        }
+    }
 }
