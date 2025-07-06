@@ -1,0 +1,30 @@
+# Diretórios de build
+**/target/
+**/build/
+
+# Arquivos gerados
+*.jar
+*.war
+*.class
+*.log
+
+# Configs de IDE
+.idea/
+.vscode/
+*.iml
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos de testes
+**/surefire-reports/
+**/test-classes/
+
+# Outros arquivos desnecessários
+*.swp
+*.bak
+
+# Node ou frontend (caso use em algum módulo no futuro)
+node_modules/
+dist/

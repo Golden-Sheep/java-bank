@@ -2,31 +2,39 @@
 FROM eclipse-temurin:17-jdk-alpine AS build
 WORKDIR /workspace/app
 
-# Copia os arquivos do projeto
+# Copia o wrapper e arquivos do Maven
 COPY mvnw .
 COPY .mvn/ .mvn
+
 COPY pom.xml .
-COPY src/ src
 
-# Gera o JAR (sem rodar testes)
-RUN ./mvnw clean package -DskipTests
+# Copia todos os módulos
+COPY bank-common/ bank-common/
+COPY bank-user/ bank-user/
+COPY bank-account/ bank-account/
+COPY bank-wallet/ bank-wallet/
+COPY bank-transaction/ bank-transaction/
+COPY bank-config/ bank-config/
+COPY bank-api/ bank-api/
+COPY bank-app/ bank-app/
 
-# Extrai as dependências e classes do JAR para uso na próxima imagem
+# Compila o módulo bank-app e suas dependências (fat jar)
+RUN ./mvnw clean package -DskipTests -pl bank-app -am
+
+# Extrai o conteúdo do JAR Spring Boot gerado
+WORKDIR /workspace/app/bank-app
 RUN mkdir -p target/dependency && \
+    cp target/bank-app-0.0.1-SNAPSHOT.jar target/dependency/app.jar && \
     cd target/dependency && \
-    jar -xf ../*.jar
+    jar -xf app.jar
 
-# Etapa de runtime: imagem leve com apenas o JRE
+# Etapa de runtime
 FROM eclipse-temurin:17-jre-alpine
 VOLUME /tmp
+ARG DEPENDENCY=/workspace/app/bank-app/target/dependency
 
-# Define caminho das dependências vindas do build
-ARG DEPENDENCY=/workspace/app/target/dependency
-
-# Copia dependências e classes para a imagem final
 COPY --from=build ${DEPENDENCY}/BOOT-INF/lib /app/lib
 COPY --from=build ${DEPENDENCY}/META-INF /app/META-INF
 COPY --from=build ${DEPENDENCY}/BOOT-INF/classes /app
 
-# Define o ponto de entrada da aplicação
 ENTRYPOINT ["java", "-cp", "app:app/lib/*", "dev.jvops.bank.JavaBankApplication"]
