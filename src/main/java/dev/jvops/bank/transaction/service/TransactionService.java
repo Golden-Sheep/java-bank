@@ -2,6 +2,7 @@ package dev.jvops.bank.transaction.service;
 
 import dev.jvops.bank.api.external.notificationgateway.NotificationGatewayClient;
 import dev.jvops.bank.api.external.paymentgateway.PaymentGatewayClient;
+import dev.jvops.bank.api.external.paymentgateway.PaymentGatewayResponse;
 import dev.jvops.bank.common.AppLogger;
 import dev.jvops.bank.transaction.dto.TransactionRequestDTO;
 import dev.jvops.bank.transaction.model.Transaction;
@@ -45,17 +46,25 @@ public class TransactionService {
         fromWallet.setAmount(fromWallet.getAmount().subtract(amount));
         toWallet.setAmount(toWallet.getAmount().add(amount));
 
-        boolean authorized = paymentGatewayClient.authorizeTransaction();
-        if (!authorized) {
+
+        if (!paymentGatewayClient.authorizeTransaction().getData().isAuthorization()) {
             throw new TransactionUnauthorizedException();
         }
 
-        boolean notify = notificationGatewayClient.NotifyTransaction();
-        if (!notify) {
+        if (!this.notifyTransactionSafe()) {
             AppLogger.warn(TransactionService.class, "Transaction completed but notification failed");
         }
 
         transaction.setStatus(TransactionStatus.APPROVED);
         return transactionRepository.save(transaction);
+    }
+
+    private boolean notifyTransactionSafe() {
+        try {
+            notificationGatewayClient.notifyTransaction();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

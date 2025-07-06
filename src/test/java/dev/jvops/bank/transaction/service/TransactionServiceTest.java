@@ -2,6 +2,7 @@ package dev.jvops.bank.transaction.service;
 
 import dev.jvops.bank.api.external.notificationgateway.NotificationGatewayClient;
 import dev.jvops.bank.api.external.paymentgateway.PaymentGatewayClient;
+import dev.jvops.bank.api.external.paymentgateway.PaymentGatewayResponse;
 import dev.jvops.bank.transaction.dto.TransactionRequestDTO;
 import dev.jvops.bank.transaction.model.Transaction;
 import dev.jvops.bank.transaction.repository.TransactionRepository;
@@ -22,9 +23,9 @@ class TransactionServiceTest {
 
     private WalletService walletService;
     private TransactionRepository transactionRepository;
-    private TransactionService transactionService;
     private PaymentGatewayClient paymentGatewayClient;
     private NotificationGatewayClient notificationGatewayClient;
+    private TransactionService transactionService;
 
     @BeforeEach
     void setUp() {
@@ -32,39 +33,34 @@ class TransactionServiceTest {
         transactionRepository = mock(TransactionRepository.class);
         paymentGatewayClient = mock(PaymentGatewayClient.class);
         notificationGatewayClient = mock(NotificationGatewayClient.class);
-        transactionService = new TransactionService(walletService, transactionRepository, paymentGatewayClient, notificationGatewayClient);
+
+        transactionService = new TransactionService(
+                walletService,
+                transactionRepository,
+                paymentGatewayClient,
+                notificationGatewayClient
+        );
     }
 
     @Test
     void testTransfer_SuccessfulTransaction() {
-        // Arrange
         Long originWalletId = 1L;
         Long targetWalletId = 2L;
         BigDecimal amount = new BigDecimal("50.00");
 
-        Wallet originWallet = new Wallet();
-        originWallet.setId(originWalletId);
-        originWallet.setAmount(new BigDecimal("100.00"));
+        Wallet originWallet = buildWallet(originWalletId, new BigDecimal("100.00"));
+        Wallet targetWallet = buildWallet(targetWalletId, new BigDecimal("20.00"));
 
-        Wallet targetWallet = new Wallet();
-        targetWallet.setId(targetWalletId);
-        targetWallet.setAmount(new BigDecimal("20.00"));
-
-        TransactionRequestDTO dto = new TransactionRequestDTO();
-        dto.setOriginWalletId(originWalletId);
-        dto.setTargetWalletId(targetWalletId);
-        dto.setAmount(amount);
+        TransactionRequestDTO dto = buildDTO(originWalletId, targetWalletId, amount);
 
         when(walletService.getWalletById(originWalletId)).thenReturn(originWallet);
         when(walletService.getWalletById(targetWalletId)).thenReturn(targetWallet);
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(i -> i.getArgument(0));
-        when(paymentGatewayClient.authorizeTransaction()).thenReturn(true); // mock autorização
-        when(notificationGatewayClient.NotifyTransaction()).thenReturn(true); // mock notificação
+        when(paymentGatewayClient.authorizeTransaction()).thenReturn(buildPaymentGatewayResponse(true));
+        doNothing().when(notificationGatewayClient).notifyTransaction();
 
-        // Act
         Transaction transaction = transactionService.transfer(dto);
 
-        // Assert
         assertNotNull(transaction);
         assertEquals(originWallet, transaction.getOriginWallet());
         assertEquals(targetWallet, transaction.getTargetWallet());
@@ -77,24 +73,14 @@ class TransactionServiceTest {
 
     @Test
     void testTransfer_InsufficientBalance() {
-        // Arrange
-        Wallet originWallet = new Wallet();
-        originWallet.setId(1L);
-        originWallet.setAmount(new BigDecimal("10.00"));
+        Wallet originWallet = buildWallet(1L, new BigDecimal("10.00"));
+        Wallet targetWallet = buildWallet(2L, new BigDecimal("100.00"));
 
-        Wallet targetWallet = new Wallet();
-        targetWallet.setId(2L);
-        targetWallet.setAmount(new BigDecimal("100.00"));
-
-        TransactionRequestDTO dto = new TransactionRequestDTO();
-        dto.setOriginWalletId(1L);
-        dto.setTargetWalletId(2L);
-        dto.setAmount(new BigDecimal("50.00"));
+        TransactionRequestDTO dto = buildDTO(1L, 2L, new BigDecimal("50.00"));
 
         when(walletService.getWalletById(1L)).thenReturn(originWallet);
         when(walletService.getWalletById(2L)).thenReturn(targetWallet);
 
-        // Act + Assert
         InsufficientBalanceException exception = assertThrows(InsufficientBalanceException.class, () -> {
             transactionService.transfer(dto);
         });
@@ -105,22 +91,14 @@ class TransactionServiceTest {
 
     @Test
     void testTransfer_FailsWhenNotAuthorized() {
-        Wallet originWallet = new Wallet();
-        originWallet.setId(1L);
-        originWallet.setAmount(new BigDecimal("100.00"));
+        Wallet originWallet = buildWallet(1L, new BigDecimal("100.00"));
+        Wallet targetWallet = buildWallet(2L, new BigDecimal("0.00"));
 
-        Wallet targetWallet = new Wallet();
-        targetWallet.setId(2L);
-        targetWallet.setAmount(new BigDecimal("0.00"));
-
-        TransactionRequestDTO dto = new TransactionRequestDTO();
-        dto.setOriginWalletId(1L);
-        dto.setTargetWalletId(2L);
-        dto.setAmount(new BigDecimal("50.00"));
+        TransactionRequestDTO dto = buildDTO(1L, 2L, new BigDecimal("50.00"));
 
         when(walletService.getWalletById(1L)).thenReturn(originWallet);
         when(walletService.getWalletById(2L)).thenReturn(targetWallet);
-        when(paymentGatewayClient.authorizeTransaction()).thenReturn(false); // simula rejeição
+        when(paymentGatewayClient.authorizeTransaction()).thenReturn(buildPaymentGatewayResponse(false));
 
         TransactionUnauthorizedException exception = assertThrows(TransactionUnauthorizedException.class, () -> {
             transactionService.transfer(dto);
@@ -130,4 +108,32 @@ class TransactionServiceTest {
         verify(transactionRepository, never()).save(any());
     }
 
+    // Helper: cria Wallet
+    private Wallet buildWallet(Long id, BigDecimal amount) {
+        Wallet wallet = new Wallet();
+        wallet.setId(id);
+        wallet.setAmount(amount);
+        return wallet;
+    }
+
+    // Helper: cria DTO de transação
+    private TransactionRequestDTO buildDTO(Long originId, Long targetId, BigDecimal amount) {
+        TransactionRequestDTO dto = new TransactionRequestDTO();
+        dto.setOriginWalletId(originId);
+        dto.setTargetWalletId(targetId);
+        dto.setAmount(amount);
+        return dto;
+    }
+
+    // Helper: cria mock da resposta do Feign
+    private PaymentGatewayResponse buildPaymentGatewayResponse(boolean authorized) {
+        PaymentGatewayResponse.DataResponse data = new PaymentGatewayResponse.DataResponse();
+        data.setAuthorization(authorized);
+
+        PaymentGatewayResponse response = new PaymentGatewayResponse();
+        response.setStatus("success");
+        response.setData(data);
+
+        return response;
+    }
 }

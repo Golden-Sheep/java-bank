@@ -6,7 +6,8 @@ import dev.jvops.bank.account.model.enums.AccountType;
 import dev.jvops.bank.account.repository.AccountRepository;
 import dev.jvops.bank.api.external.notificationgateway.NotificationGatewayClient;
 import dev.jvops.bank.api.external.paymentgateway.PaymentGatewayClient;
-import dev.jvops.bank.config.TestMockConfig;
+import dev.jvops.bank.api.external.paymentgateway.PaymentGatewayResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import dev.jvops.bank.transaction.dto.TransactionRequestDTO;
 import dev.jvops.bank.transaction.repository.TransactionRepository;
 import dev.jvops.bank.user.model.User;
@@ -19,6 +20,7 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.cloud.contract.wiremock.AutoConfigureWireMock;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
@@ -29,10 +31,10 @@ import java.math.BigDecimal;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
+@AutoConfigureWireMock(port = 0) // inicia WireMock em porta aleatória
 @ActiveProfiles("test")
-@Import(TestMockConfig.class)
 public class TransactionControllerIntegrationTest {
 
     @Autowired
@@ -53,14 +55,30 @@ public class TransactionControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    private Wallet originWallet;
-    private Wallet targetWallet;
-
     @Autowired
     private AccountRepository accountRepository;
 
     @Autowired
     private UserRepository userRepository;
+
+    private Wallet originWallet;
+    private Wallet targetWallet;
+
+    private void mockAuthorization(Boolean authorization) {
+        stubFor(get(urlEqualTo("/"))
+                .willReturn(aResponse()
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                            {
+                                "status": "success",
+                                "data": {
+                                    "authorization": %s
+                                }
+                            }
+                            """.formatted(authorization))
+                )
+        );
+    }
 
     @BeforeEach
     void setUp() {
@@ -69,17 +87,16 @@ public class TransactionControllerIntegrationTest {
         accountRepository.deleteAll();
         userRepository.deleteAll();
 
-        // Criar o usuário
-        User user = User.builder()
-                .name("João da Silva")
-                .cpf("12345678901")
-                .email("joao@email.com")
-                .password("senha123")
-                .phoneNumber("11999999999")
-                .build();
-        user = userRepository.save(user);
+        User user = userRepository.save(
+                User.builder()
+                        .name("João da Silva")
+                        .cpf("12345678901")
+                        .email("joao@email.com")
+                        .password("senha123")
+                        .phoneNumber("11999999999")
+                        .build()
+        );
 
-        // Criar conta de origem e carteira associada
         Account originAccount = Account.builder()
                 .document("12345678901")
                 .type(AccountType.PF)
@@ -94,7 +111,6 @@ public class TransactionControllerIntegrationTest {
 
         originAccount = accountRepository.save(originAccount);
 
-        // Criar conta de destino e carteira associada
         Account targetAccount = Account.builder()
                 .document("09876543210")
                 .type(AccountType.PF)
@@ -109,29 +125,24 @@ public class TransactionControllerIntegrationTest {
 
         targetAccount = accountRepository.save(targetAccount);
 
-        // Atribuir às variáveis de teste
         this.originWallet = originAccount.getWallet();
         this.targetWallet = targetAccount.getWallet();
 
-        // Mocks dos gateways
-        Mockito.when(paymentGatewayClient.authorizeTransaction()).thenReturn(true);
-        Mockito.when(notificationGatewayClient.NotifyTransaction()).thenReturn(true);
     }
+
 
     @Test
     void testTransferSuccess() throws Exception {
-        TransactionRequestDTO dto = new TransactionRequestDTO();
-        dto.setOriginWalletId(originWallet.getId());
-        dto.setTargetWalletId(targetWallet.getId());
-        dto.setAmount(new BigDecimal("40.00"));
+        mockAuthorization(true);
+        TransactionRequestDTO dto = buildTransactionDTO("40.00");
 
         mockMvc.perform(post("/api/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
                 .andExpect(status().isOk());
 
-        Wallet updatedOrigin = walletRepository.findById(originWallet.getId()).get();
-        Wallet updatedTarget = walletRepository.findById(targetWallet.getId()).get();
+        Wallet updatedOrigin = walletRepository.findById(originWallet.getId()).orElseThrow();
+        Wallet updatedTarget = walletRepository.findById(targetWallet.getId()).orElseThrow();
 
         assert updatedOrigin.getAmount().compareTo(new BigDecimal("60.00")) == 0;
         assert updatedTarget.getAmount().compareTo(new BigDecimal("90.00")) == 0;
@@ -139,12 +150,8 @@ public class TransactionControllerIntegrationTest {
 
     @Test
     void testTransferFailsWhenUnauthorized() throws Exception {
-        Mockito.when(paymentGatewayClient.authorizeTransaction()).thenReturn(false);
-
-        TransactionRequestDTO dto = new TransactionRequestDTO();
-        dto.setOriginWalletId(originWallet.getId());
-        dto.setTargetWalletId(targetWallet.getId());
-        dto.setAmount(new BigDecimal("40.00"));
+        mockAuthorization(false);
+        TransactionRequestDTO dto = buildTransactionDTO("40.00");
 
         mockMvc.perform(post("/api/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -152,17 +159,32 @@ public class TransactionControllerIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
-
     @Test
     void testTransferFailsWhenInsufficientBalance() throws Exception {
-        TransactionRequestDTO dto = new TransactionRequestDTO();
-        dto.setOriginWalletId(originWallet.getId());
-        dto.setTargetWalletId(targetWallet.getId());
-        dto.setAmount(new BigDecimal("1000.00"));
+        TransactionRequestDTO dto = buildTransactionDTO("1000.00");
 
         mockMvc.perform(post("/api/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
                 .andExpect(status().isBadRequest());
+    }
+
+    private PaymentGatewayResponse buildPaymentGatewayResponse(boolean authorized) {
+        var data = new PaymentGatewayResponse.DataResponse();
+        data.setAuthorization(authorized);
+
+        var response = new PaymentGatewayResponse();
+        response.setStatus("success");
+        response.setData(data);
+
+        return response;
+    }
+
+    private TransactionRequestDTO buildTransactionDTO(String amount) {
+        TransactionRequestDTO dto = new TransactionRequestDTO();
+        dto.setOriginWalletId(originWallet.getId());
+        dto.setTargetWalletId(targetWallet.getId());
+        dto.setAmount(new BigDecimal(amount));
+        return dto;
     }
 }
